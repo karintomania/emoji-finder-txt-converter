@@ -1,0 +1,108 @@
+  Basic Structure and Imports
+
+  const std = @import("std");
+  const print = std.debug.print;
+  const ArrayList = std.ArrayList;
+  const Allocator = std.mem.Allocator;
+
+  - const std = @import("std") imports Zig's standard library
+  - The other lines create shortcuts for commonly used types/functions
+  - const in Zig means the binding is immutable (can't be reassigned)
+
+  Data Structures
+
+  const Emoji = struct {
+      codepoint: []const u8,
+      emoji: []const u8,
+      version: []const u8,
+      description: []const u8,
+      group: []const u8,
+      subgroup: []const u8,
+  };
+
+  - struct defines a custom data type (like a class in other languages)
+  - []const u8 is a string slice in Zig (array of bytes that can't be modified)
+  - This represents one emoji with all its metadata
+
+  const EmojiData = struct {
+      emojis: ArrayList(Emoji),
+      current_group: []const u8,
+      current_subgroup: []const u8,
+      allocator: Allocator,
+
+      fn init(allocator: Allocator) EmojiData { ... }
+      fn deinit(self: *EmojiData) void { ... }
+  };
+
+  - ArrayList(Emoji) is a dynamic array that can grow/shrink
+  - allocator handles memory management
+  - init is a constructor function
+  - deinit is a destructor that frees memory
+  - self: *EmojiData means the function takes a pointer to the struct
+
+  Memory Management
+
+  fn deinit(self: *EmojiData) void {
+      for (self.emojis.items) |emoji| {
+          self.allocator.free(emoji.codepoint);
+          // ... free other fields
+      }
+      self.emojis.deinit();
+  }
+
+  - Zig has manual memory management (no garbage collector)
+  - You must free() any memory you allocate()
+  - for (array) |item| is Zig's foreach loop syntax
+
+  String Processing
+
+  if (std.mem.startsWith(u8, line, "# group: ")) {
+      const group_name = std.mem.trim(u8, line[9..], " \t\n\r");
+      data.current_group = try allocator.dupe(u8, group_name);
+      return;
+  }
+
+  - startsWith() checks if string begins with a pattern
+  - line[9..] is slice syntax (from index 9 to end)
+  - trim() removes whitespace from both ends
+  - try is error handling - if function fails, return the error
+  - allocator.dupe() copies a string to heap memory
+
+  Error Handling
+
+  var emoji_data = parseEmojiFile(allocator, input_file) catch |err| {
+      print("Failed to parse emoji file: {}\n", .{err});
+      return;
+  };
+
+  - Functions that can fail return !Type (error union)
+  - try propagates errors up the call stack
+  - catch |err| handles specific errors locally
+  - {} in print statements are placeholders for arguments
+
+  File I/O
+
+  const file = std.fs.cwd().openFile(file_path, .{}) catch |err| {
+      print("Error opening file {s}: {}\n", .{ file_path, err });
+      return err;
+  };
+  defer file.close();
+
+  - std.fs.cwd() gets current working directory
+  - .{} creates an empty struct (default options)
+  - defer runs code when function exits (like finally block)
+
+  Main Function
+
+  pub fn main() !void {
+      var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+      defer _ = gpa.deinit();
+      const allocator = gpa.allocator();
+
+      const args = try std.process.argsAlloc(allocator);
+      defer std.process.argsFree(allocator, args);
+
+  - pub makes function public
+  - !void means function can return an error or nothing
+  - GeneralPurposeAllocator is Zig's default memory allocator
+  - argsAlloc() gets command line arguments as an array
