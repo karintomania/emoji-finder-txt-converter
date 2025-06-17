@@ -3,7 +3,7 @@ const std = @import("std");
 // inalid line includes empty lines and non-fully-qualified emojis
 const LineType = enum {group, subgroup, emoji, invalid};
 
-pub fn checkLineType(line: []const u8) LineType {
+pub fn getLineType(line: []const u8) LineType {
     if (std.mem.indexOf(u8, line, "# group") != null) {
         return LineType.group; 
     } else if (std.mem.indexOf(u8, line, "# subgroup") != null) {
@@ -15,7 +15,7 @@ pub fn checkLineType(line: []const u8) LineType {
     }
 }
 
-test "testEmoji adds" {
+test "getLineType returns type" {
     const testing = std.testing;
 
     const test_cases = [_]struct{ expectedType: LineType, line: []const u8 }{
@@ -26,7 +26,7 @@ test "testEmoji adds" {
     };
 
     for (test_cases) |test_case| {
-        const result = checkLineType(test_case.line);
+        const result = getLineType(test_case.line);
 
         try testing.expectEqual(test_case.expectedType, result);
     }
@@ -46,13 +46,32 @@ pub fn parseEmojiLine(
     subgroup: []const u8,
     line: []const u8,
 ) Emoji {
-    var afterHashTag = std.mem.splitSequence(u8, line, "#");
-    var s = std.mem.splitSequence(u8, afterHashTag.first(), " ");
 
-    const emoji = s.next() orelse "";
-    std.debug.print("emoji = {s}", .{emoji});
-    const desc = s.next() orelse "";
-    std.debug.print("desc = {s}", .{desc});
+    const commentIndex = std.mem.indexOf(u8, line, "#") orelse @panic("failed to parse");
+    const comment = std.mem.trim(u8, line[commentIndex + 1..], " ");
+
+    var commentParts = std.mem.splitSequence(u8, comment, " ");
+
+    const emoji = commentParts.next() orelse @panic("No emoji found in line");
+
+    // skip version
+    _ = commentParts.next();
+
+    var buffer: [256]u8 = undefined;
+    var fba = std.heap.FixedBufferAllocator.init(&buffer);
+    const allocator = fba.allocator();
+
+    var descList = std.ArrayList([]const u8).init(allocator);
+    defer descList.deinit();
+
+    while (commentParts.next()) |part| {
+        descList.append(part) catch @panic("Failed to append to descList");
+    }
+
+    std.debug.print("emoji = {s}\n", .{emoji});
+
+    const desc = std.mem.join(std.heap.page_allocator, " ", descList.items) catch @panic("Failed to join desc");
+    std.debug.print("desc = {s}\n", .{desc});
 
     return Emoji{
         .group= group,
@@ -75,6 +94,6 @@ test "parseEmojiLine returns parsed Emoji" {
 
     try testing.expectEqual(group, res.group);
     try testing.expectEqual(subgroup, res.subgroup);
-    try testing.expectEqual("😀", res.emoji);
-    try testing.expectEqual(group, res.desc);
+    try testing.expectEqualStrings("😀", res.emoji);
+    try testing.expectEqualStrings("grinning face", res.desc);
 }
