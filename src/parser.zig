@@ -1,152 +1,116 @@
 const std = @import("std");
-const ArrayList = std.ArrayList;
-const Allocator = std.mem.Allocator;
+const testing = std.testing;
+
+// inalid line includes empty lines and non-fully-qualified emojis
+const LineType = enum {group, subgroup, emoji, invalid};
+
+pub fn getLineType(line: []const u8) LineType {
+    if (std.mem.indexOf(u8, line, "# group") != null) {
+        return LineType.group; 
+    } else if (std.mem.indexOf(u8, line, "# subgroup") != null) {
+        return LineType.subgroup;
+    } else if (std.mem.indexOf(u8, line, "fully-qualified") != null) {
+        return LineType.emoji;
+    } else {
+           return LineType.invalid;
+    }
+}
+
+test "getLineType returns type" {
+    const test_cases = [_]struct{ expectedType: LineType, line: []const u8 }{
+        .{ .expectedType = LineType.group, .line = "# group: Smileys & Emotion" },
+        .{ .expectedType = LineType.subgroup, .line = "# subgroup: face-smiling" },
+        .{ .expectedType = LineType.emoji, .line = "1F600                                                  ; fully-qualified     # 😀 E1.0 grinning face" },
+        .{ .expectedType = LineType.invalid, .line = "1F636 200D 1F32B                                       ; minimally-qualified # 😶‍🌫 E13.1 face in clouds" },
+    };
+
+    for (test_cases) |test_case| {
+        const result = getLineType(test_case.line);
+
+        try testing.expectEqual(test_case.expectedType, result);
+    }
+}
 
 pub const Emoji = struct {
-    codepoint: []const u8,
     emoji: []const u8,
-    version: []const u8,
-    description: []const u8,
     group: []const u8,
     subgroup: []const u8,
+    desc: []const u8,
+    keywords: []const []const u8,
 };
 
-pub const EmojiData = struct {
-    emojis: ArrayList(Emoji),
-    current_group: []const u8,
-    current_subgroup: []const u8,
-    allocator: Allocator,
 
-    pub fn init(allocator: Allocator) EmojiData {
-        return EmojiData{
-            .emojis = ArrayList(Emoji).init(allocator),
-            .current_group = "",
-            .current_subgroup = "",
-            .allocator = allocator,
-        };
+pub fn parseEmojiLine(
+    group: []const u8,
+    subgroup: []const u8,
+    line: []const u8,
+) Emoji {
+
+    const commentIndex = std.mem.indexOf(u8, line, "#") orelse @panic("failed to parse");
+    const comment = std.mem.trim(u8, line[commentIndex + 1..], " ");
+
+    var commentParts = std.mem.splitSequence(u8, comment, " ");
+
+    const emoji = commentParts.next() orelse @panic("No emoji found in line");
+
+    // skip version
+    _ = commentParts.next();
+
+    var buffer: [512]u8 = undefined;
+    var fba = std.heap.FixedBufferAllocator.init(&buffer);
+    const allocator = fba.allocator();
+
+    var descList = std.ArrayList([]const u8).init(allocator);
+    defer descList.deinit();
+
+    while (commentParts.next()) |part| {
+        descList.append(part) catch @panic("Failed to append to descList");
     }
 
-    pub fn deinit(self: *EmojiData) void {
-        for (self.emojis.items) |emoji| {
-            self.allocator.free(emoji.codepoint);
-            self.allocator.free(emoji.emoji);
-            self.allocator.free(emoji.version);
-            self.allocator.free(emoji.description);
-            self.allocator.free(emoji.group);
-            self.allocator.free(emoji.subgroup);
-        }
-        self.emojis.deinit();
-    }
-};
+    const desc = std.mem.join(allocator, " ", descList.items) catch @panic("Failed to join desc");
 
-pub fn parseEmojiLine(allocator: Allocator, line: []const u8, data: *EmojiData) !void {
-    if (line.len == 0 or line[0] == '\n') return;
-    
-    if (std.mem.startsWith(u8, line, "# group: ")) {
-        const group_name = std.mem.trim(u8, line[9..], " \t\n\r");
-        data.current_group = try allocator.dupe(u8, group_name);
-        return;
-    }
-    
-    if (std.mem.startsWith(u8, line, "# subgroup: ")) {
-        const subgroup_name = std.mem.trim(u8, line[12..], " \t\n\r");
-        data.current_subgroup = try allocator.dupe(u8, subgroup_name);
-        return;
-    }
-    
-    if (line[0] == '#') return;
-    
-    var parts = std.mem.splitScalar(u8, line, ';');
-    const codepoint_part = std.mem.trim(u8, parts.next() orelse return, " \t");
-    const rest = std.mem.trim(u8, parts.next() orelse return, " \t");
-    
-    var comment_parts = std.mem.splitScalar(u8, rest, '#');
-    _ = comment_parts.next();
-    const comment = std.mem.trim(u8, comment_parts.next() orelse return, " \t\n\r");
-    
-    var comment_split = std.mem.splitScalar(u8, comment, ' ');
-    const emoji_char = comment_split.next() orelse return;
-    const version_part = comment_split.next() orelse return;
-    
-    const description_start = std.mem.indexOf(u8, comment, version_part) orelse return;
-    const description = std.mem.trim(u8, comment[description_start + version_part.len..], " \t\n\r");
-    
-    const emoji = Emoji{
-        .codepoint = try allocator.dupe(u8, codepoint_part),
-        .emoji = try allocator.dupe(u8, emoji_char),
-        .version = try allocator.dupe(u8, version_part),
-        .description = try allocator.dupe(u8, description),
-        .group = try allocator.dupe(u8, data.current_group),
-        .subgroup = try allocator.dupe(u8, data.current_subgroup),
+    return Emoji{
+        .group= group,
+        .subgroup= subgroup,
+        .emoji= emoji,
+        .desc= desc,
+        .keywords = &.{},
     };
-    
-    try data.emojis.append(emoji);
 }
 
-test "parseEmojiLine - basic emoji parsing" {
-    const testing = std.testing;
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-    
-    var data = EmojiData.init(allocator);
-    defer data.deinit();
-    
-    // Set up group and subgroup context
-    data.current_group = try allocator.dupe(u8, "Smileys & Emotion");
-    data.current_subgroup = try allocator.dupe(u8, "face-smiling");
-    
-    // Test parsing a basic emoji line
-    const line = "1F600          ; fully-qualified     # 😀 E1.0 grinning face";
-    try parseEmojiLine(allocator, line, &data);
-    
-    try testing.expect(data.emojis.items.len == 1);
-    try testing.expectEqualStrings("1F600", data.emojis.items[0].codepoint);
-    try testing.expectEqualStrings("😀", data.emojis.items[0].emoji);
-    try testing.expectEqualStrings("E1.0", data.emojis.items[0].version);
-    try testing.expectEqualStrings("grinning face", data.emojis.items[0].description);
-    try testing.expectEqualStrings("Smileys & Emotion", data.emojis.items[0].group);
-    try testing.expectEqualStrings("face-smiling", data.emojis.items[0].subgroup);
+test "parseEmojiLine returns parsed Emoji" {
+
+    const emojiLine = "1F600                                                  ; fully-qualified     # 😀 E1.0 grinning face";
+
+    const group = "Smileys & Emotion";
+    const subgroup = "face-smiling";
+
+    const res = parseEmojiLine(group, subgroup, emojiLine);
+
+    try testing.expectEqual(group, res.group);
+    try testing.expectEqual(subgroup, res.subgroup);
+    try testing.expectEqualStrings("😀", res.emoji);
+    try testing.expectEqualStrings("grinning face", res.desc);
 }
 
-test "parseEmojiLine - group and subgroup parsing" {
-    const testing = std.testing;
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-    
-    var data = EmojiData.init(allocator);
-    defer data.deinit();
-    
-    // Test group parsing
-    const group_line = "# group: Smileys & Emotion";
-    try parseEmojiLine(allocator, group_line, &data);
-    try testing.expectEqualStrings("Smileys & Emotion", data.current_group);
-    
-    // Test subgroup parsing
-    const subgroup_line = "# subgroup: face-smiling";
-    try parseEmojiLine(allocator, subgroup_line, &data);
-    try testing.expectEqualStrings("face-smiling", data.current_subgroup);
+pub fn parseGroupLine(line: []const u8) []const u8 {
+    var it = std.mem.splitSequence(u8, line, ": ");
+    _ = it.next();
+
+    const result = it.next() orelse @panic("Failed to parse group line");
+
+    return result;
 }
 
-test "parseEmojiLine - skip empty lines and comments" {
-    const testing = std.testing;
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-    
-    var data = EmojiData.init(allocator);
-    defer data.deinit();
-    
-    // Test empty line
-    try parseEmojiLine(allocator, "", &data);
-    try testing.expect(data.emojis.items.len == 0);
-    
-    // Test comment line
-    try parseEmojiLine(allocator, "# This is a comment", &data);
-    try testing.expect(data.emojis.items.len == 0);
-    
-    // Test newline only
-    try parseEmojiLine(allocator, "\n", &data);
-    try testing.expect(data.emojis.items.len == 0);
+test "parseGroupLine returns group name" {
+    const groupLine = "# group: Smileys & Emotion";
+    const expectedGroup = "Smileys & Emotion";
+    const resultGroup = parseGroupLine(groupLine);
+    try testing.expectEqualStrings(expectedGroup, resultGroup);
+
+    const subgroupLine = "# subgroup: face-smiling";
+    const expectedSubgroup = "face-smiling";
+    const resultSub = parseGroupLine(subgroupLine);
+
+    try testing.expectEqualStrings(expectedSubgroup, resultSub);
 }
