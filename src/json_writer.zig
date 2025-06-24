@@ -14,16 +14,13 @@ pub fn writeEmojisToTsv(emojis: []const Emoji, writer: Writer) !void {
 
 pub fn writeEmojiToTsv(emoji: Emoji, writer: Writer) !void {
     // emoji\tgroup\tsubgroup\tdesc\tkeywords
-    try writer.print(
-        "{s}\t{s}\t{s}\t{s}\t{s}\n",
-        .{
-            emoji.emoji,
-            emoji.group,
-            emoji.subgroup,
-            emoji.desc,
-            emoji.keywords[0],
-        }
-    );
+    try writer.print("{s}\t{s}\t{s}\t{s}\t{s}\n", .{
+        emoji.emoji,
+        emoji.group,
+        emoji.subgroup,
+        emoji.desc,
+        emoji.keywords[0],
+    });
 }
 
 test "writeEmojisToTsv" {
@@ -43,13 +40,13 @@ test "writeEmojisToTsv" {
         .keywords = &.{ "happy", "joy", "smile" },
     };
 
-    const emojis: []const Emoji = &.{emoji1, emoji2};
+    const emojis: []const Emoji = &.{ emoji1, emoji2 };
 
     var tmp_dir = std.testing.tmpDir(.{});
     defer tmp_dir.cleanup();
 
     // Create the file using the dir
-    const file = try tmp_dir.dir.createFile("emoji.tsv", File.CreateFlags{.read = true, .mode = 777});
+    const file = try tmp_dir.dir.createFile("emoji.tsv", File.CreateFlags{ .read = true, .mode = 777 });
     defer file.close();
 
     const writer = file.writer();

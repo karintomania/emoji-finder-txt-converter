@@ -3,10 +3,10 @@ const print = std.debug.print;
 const parser = @import("parser.zig");
 const Allocator = std.mem.Allocator;
 
-
 pub fn main() !void {
-    // const gpa = std.heap.GeneralPurposeAllocator(.{});
-    // const allocator = gpa.allocator();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
 
     const file_path = "emoji.txt";
 
@@ -16,30 +16,19 @@ pub fn main() !void {
     var buf_reader = std.io.bufferedReader(reader);
     const in_stream = buf_reader.reader();
 
-    var group: []const u8 = undefined;
-    var subgroup: []const u8 = undefined;
-    var emoji: parser.Emoji = undefined;
-
     var buffer: [1024]u8 = undefined;
 
-    while(try in_stream.readUntilDelimiterOrEof(buffer[0..], '\n')) |line| {
-        const line_type = parser.getLineType(line);
+    var emojiParser = parser.EmojiParser.init(allocator);
+    defer emojiParser.deinit();
 
-        switch (line_type) {
-            .emoji => {
-                emoji = parser.parseEmojiLine(group, subgroup, line);
-                print("Emoji: {s}, Group: {s}, Subgroup: {s}, Desc: {s}\n",
-                    .{emoji.emoji, emoji.group, emoji.subgroup, emoji.desc});
-            },
-            .group => {
-                group = parser.parseGroupLine(line);
-                print("Group: {s}\n", .{group});
-            },
-            .subgroup => {
-                subgroup = parser.parseGroupLine(line);
-                print("Subgroup: {s}\n", .{subgroup});
-            },
-            else => {},
-        }
+    while (try in_stream.readUntilDelimiterOrEof(&buffer, '\n')) |line| {
+        try emojiParser.handleLine(line);
+    }
+
+    // iterate emojiParser.map
+    var iterator = emojiParser.map.iterator();
+    while (iterator.next()) |entry| {
+        const emoji = entry.value_ptr.*;
+        print("Emoji: {s}, Group: {s}, Subgroup: {s}, Description: {s}\n", .{ emoji.emoji, emoji.group, emoji.subgroup, emoji.desc });
     }
 }
