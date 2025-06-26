@@ -11,28 +11,22 @@ pub const Emoji = struct {
     subgroup: []const u8,
     desc: []const u8,
     keywords: []const []const u8,
-
-      // pub fn format(
-      //     self: Emoji,
-      //     comptime fmt: []const u8,
-      //     options: std.fmt.FormatOptions,
-      //     writer: anytype,
-      // ) !void {
-      //     _ = fmt; _ = options;
-      //     try writer.print("Emoji{{ emoji: {s}, group: {s} }}", .{ self.emoji, self.group });
-      // }
 };
 
 pub const EmojiParser = struct {
     group: []const u8,
     subgroup: []const u8,
+    arena: std.heap.ArenaAllocator,
     allocator: Allocator,
     map: std.StringHashMap(Emoji),
 
     pub fn init(allocator: Allocator) EmojiParser {
+        const arena = std.heap.ArenaAllocator.init(allocator);
+
         return EmojiParser{
             .group = "",
             .subgroup = "",
+            .arena = arena,
             .allocator = allocator,
             .map = std.StringHashMap(Emoji).init(allocator),
         };
@@ -42,36 +36,29 @@ pub const EmojiParser = struct {
         self: *EmojiParser,
         line: []const u8,
     ) !void {
+        const arena_allocator = self.arena.allocator();
         const lineType = getLineType(line);
+
         switch (lineType) {
             .emoji => {
-                const emoji = parseEmojiLine(self.group, self.subgroup, line, self.allocator);
-
-                std.debug.print("{s}\n", .{emoji.emoji});
-                if (self.map.contains(emoji.emoji)) {
-                    // If the emoji already exists, free the allocated description and skip it
-                    self.allocator.free(emoji.desc);
-                    return;
-                }
-
+                const emoji = try parseEmojiLine(self.group, self.subgroup, line, arena_allocator);
                 try self.map.put(emoji.emoji, emoji);
             },
             .group => {
-                self.group = parseGroupLine(line);
+                const group_slice = parseGroupLine(line);
+                self.group = try arena_allocator.dupe(u8, group_slice);
             },
             .subgroup => {
-                self.subgroup = parseGroupLine(line);
+                const subgroup_slice = parseGroupLine(line);
+                self.subgroup = try arena_allocator.dupe(u8, subgroup_slice);
             },
             else => {},
         }
     }
 
     pub fn deinit(self: *EmojiParser) void {
-        var iterator = self.map.iterator();
-        while (iterator.next()) |entry| {
-            self.allocator.free(entry.value_ptr.desc);
-        }
         self.map.deinit();
+        self.arena.deinit();
     }
 };
 
@@ -92,13 +79,14 @@ fn parseEmojiLine(
     subgroup: []const u8,
     line: []const u8,
     allocator: Allocator,
-) Emoji {
+) !Emoji {
     const commentIndex = std.mem.indexOf(u8, line, "#") orelse @panic("failed to parse");
     const comment = std.mem.trim(u8, line[commentIndex + 1 ..], " ");
 
     var commentParts = std.mem.splitSequence(u8, comment, " ");
 
-    const emoji = commentParts.next() orelse @panic("No emoji found in line");
+    const emoji_slice = commentParts.next() orelse @panic("No emoji found in line");
+    const emoji = try allocator.dupe(u8, emoji_slice);
 
     // skip version
     _ = commentParts.next();
@@ -113,7 +101,7 @@ fn parseEmojiLine(
     const desc = std.mem.join(allocator, " ", descList.items) catch @panic("Failed to join desc");
 
     return Emoji{
-        .group = group,
+        .group =group,
         .subgroup = subgroup,
         .emoji = emoji,
         .desc = desc,
@@ -189,11 +177,12 @@ test "parseEmojiLine returns parsed Emoji" {
     const group = "Smileys & Emotion";
     const subgroup = "face-smiling";
 
-    const res = parseEmojiLine(group, subgroup, emojiLine, testing.allocator);
+    const res = try parseEmojiLine(group, subgroup, emojiLine, testing.allocator);
+    defer testing.allocator.free(res.emoji);
     defer testing.allocator.free(res.desc);
 
-    try testing.expectEqual(group, res.group);
-    try testing.expectEqual(subgroup, res.subgroup);
+    try testing.expectEqualStrings(group, res.group);
+    try testing.expectEqualStrings(subgroup, res.subgroup);
     try testing.expectEqualStrings("😀", res.emoji);
     try testing.expectEqualStrings("grinning face", res.desc);
 }
