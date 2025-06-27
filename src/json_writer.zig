@@ -3,8 +3,7 @@ const print = std.debug.print;
 const File = std.fs.File;
 const Writer = File.Writer;
 
-const parser = @import("parser2.zig");
-const Emoji = parser.Emoji;
+const Emoji = @import("emoji.zig").Emoji;
 
 pub fn writeEmojisToTsv(emojis: []const Emoji, writer: Writer) !void {
     for (emojis) |emoji| {

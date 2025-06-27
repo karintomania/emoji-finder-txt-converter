@@ -25,10 +25,15 @@ pub fn main() !void {
         try emojiParser.handleLine(line);
     }
 
+    const test_file = try std.fs.cwd().openFile("test.txt", std.fs.File.OpenFlags{ .mode = std.fs.File.OpenMode.write_only });
+    // const test_file = try std.fs.cwd().openFile("test.txt", .{});
+
+    const writer = test_file.writer();
+
     // iterate emojiParser.map
     var iterator = emojiParser.map.iterator();
     while (iterator.next()) |entry| {
         const emoji = entry.value_ptr.*;
-        print("Emoji: {s}, Group: {s}, Subgroup: {s}, Description: {s}\n", .{ emoji.emoji, emoji.group, emoji.subgroup, emoji.desc });
+        try writer.print("Emoji: {any}\n", .{emoji});
     }
 }

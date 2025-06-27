@@ -2,18 +2,10 @@ const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
+const Emoji = @import("emoji.zig").Emoji;
 
 // inalid line includes empty lines and non-fully-qualified emojis
 const LineType = enum { group, subgroup, emoji, emoji_skin, invalid };
-
-pub const Emoji = struct {
-    emoji: []const u8,
-    group: []const u8,
-    subgroup: []const u8,
-    desc: []const u8,
-    keywords: []const []const u8,
-    skin_tones: [5]ArrayList([]const u8),
-};
 
 pub const EmojiParser = struct {
     group: []const u8,
@@ -21,7 +13,7 @@ pub const EmojiParser = struct {
     base_emoji: Emoji, // store the base emoji for skin tones
     arena: std.heap.ArenaAllocator,
     allocator: Allocator,
-    map: std.StringHashMap(Emoji),
+    map: std.StringArrayHashMap(Emoji),
 
     pub fn init(allocator: Allocator) EmojiParser {
         const arena = std.heap.ArenaAllocator.init(allocator);
@@ -32,7 +24,7 @@ pub const EmojiParser = struct {
             .base_emoji = undefined,
             .arena = arena,
             .allocator = allocator,
-            .map = std.StringHashMap(Emoji).init(allocator),
+            .map = std.StringArrayHashMap(Emoji).init(allocator),
         };
     }
 
@@ -113,12 +105,14 @@ fn parseEmojiLine(
 
     const desc = std.mem.join(allocator, " ", descList.items) catch @panic("Failed to join desc");
 
+    const keywords = [_][]const u8{ "test", "test 2" };
+
     return Emoji{
         .group = group,
         .subgroup = subgroup,
         .emoji = emoji,
         .desc = desc,
-        .keywords = &.{},
+        .keywords = &keywords,
         .skin_tones = [5]ArrayList([]const u8){
             ArrayList([]const u8).init(allocator),
             ArrayList([]const u8).init(allocator),
@@ -146,20 +140,19 @@ fn getSkinToneIndex(emoji: *Emoji, line: []const u8, allocator: Allocator) !void
     const emoji_str = try allocator.dupe(u8, emoji_slice);
 
     if (std.mem.indexOf(u8, line, "1F3FB") != null) {
-        std.debug.print("inside 1F3FB\n", .{});
         try emoji.skin_tones[0].append(emoji_str);
     }
     if (std.mem.indexOf(u8, line, "1F3FC") != null) {
-        emoji.skin_tones[1].append(emoji_str) catch return;
+        try emoji.skin_tones[1].append(emoji_str);
     }
     if (std.mem.indexOf(u8, line, "1F3FD") != null) {
-        emoji.skin_tones[2].append(emoji_str) catch return;
+        try emoji.skin_tones[2].append(emoji_str);
     }
     if (std.mem.indexOf(u8, line, "1F3FE") != null) {
-        emoji.skin_tones[3].append(emoji_str) catch return;
+        try emoji.skin_tones[3].append(emoji_str);
     }
     if (std.mem.indexOf(u8, line, "1F3FF") != null) {
-        emoji.skin_tones[4].append(emoji_str) catch return;
+        try emoji.skin_tones[4].append(emoji_str);
     }
 }
 
