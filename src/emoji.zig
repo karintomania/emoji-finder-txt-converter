@@ -24,7 +24,7 @@ pub const Emoji = struct {
 
         // Display keywords
         for (value.keywords, 0..) |keyword, i| {
-            if (i > 0) try writer.print(", ", .{});
+            if (i > 0) try writer.print(",", .{});
 
             try writer.print("{s}", .{keyword});
         }
@@ -35,8 +35,8 @@ pub const Emoji = struct {
         for (value.skin_tones) |skin_tone_list| {
             if (skin_tone_list.items.len > 0) {
                 for (skin_tone_list.items, 0..) |skin_emoji, j| {
-                    if (j > 0) try writer.print(", ", .{});
-                    try writer.print("{s}", .{skin_emoji});
+                    if (j > 0) try writer.print(",", .{});
+                    try writer.print("{s}",.{skin_emoji});
                 }
                 try writer.print("\t", .{});
             }
@@ -71,6 +71,6 @@ test "Emoji format function" {
 
     try std.fmt.format(buffer.writer(), "{}", .{emoji});
 
-    const expected = "😀\tSmileys & Emotion\tface-smiling\tgrinning face\thappy, smile\t";
+    const expected = "😀\tSmileys & Emotion\tface-smiling\tgrinning face\thappy,smile\t";
     try testing.expectEqualStrings(expected, buffer.items);
 }

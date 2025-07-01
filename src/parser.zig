@@ -3,9 +3,7 @@ const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 const Emoji = @import("emoji.zig").Emoji;
-
-// inalid line includes empty lines and non-fully-qualified emojis
-const LineType = enum { group, subgroup, emoji, emoji_skin, invalid };
+const emoji_line_handler = @import("emoji_line_handler.zig");
 
 pub const EmojiParser = struct {
     group: []const u8,
@@ -28,29 +26,29 @@ pub const EmojiParser = struct {
         };
     }
 
-    pub fn handleLine(
+    pub fn handleEmojiLine(
         self: *EmojiParser,
         line: []const u8,
     ) !void {
         const arena_allocator = self.arena.allocator();
-        const lineType = getLineType(line);
+        const lineType = emoji_line_handler.getLineType(line);
 
         switch (lineType) {
             .emoji => {
-                const emoji = try parseEmojiLine(self.group, self.subgroup, line, arena_allocator);
+                const emoji = try emoji_line_handler.parseEmojiLine(self.group, self.subgroup, line, arena_allocator);
                 try self.map.put(emoji.emoji, emoji);
                 self.base_emoji = emoji;
             },
             .emoji_skin => {
-                try getSkinToneIndex(&self.base_emoji, line, arena_allocator);
+                try emoji_line_handler.getSkinToneIndex(&self.base_emoji, line, arena_allocator);
                 try self.map.put(self.base_emoji.emoji, self.base_emoji);
             },
             .group => {
-                const group_slice = parseGroupLine(line);
+                const group_slice = emoji_line_handler.parseGroupLine(line);
                 self.group = try arena_allocator.dupe(u8, group_slice);
             },
             .subgroup => {
-                const subgroup_slice = parseGroupLine(line);
+                const subgroup_slice = emoji_line_handler.parseGroupLine(line);
                 self.subgroup = try arena_allocator.dupe(u8, subgroup_slice);
             },
             else => {},
@@ -62,108 +60,6 @@ pub const EmojiParser = struct {
         self.arena.deinit();
     }
 };
-
-fn getLineType(line: []const u8) LineType {
-    if (std.mem.indexOf(u8, line, "# group") != null) {
-        return LineType.group;
-    } else if (std.mem.indexOf(u8, line, "# subgroup") != null) {
-        return LineType.subgroup;
-    } else if (std.mem.indexOf(u8, line, "fully-qualified") != null) {
-        if (std.mem.indexOf(u8, line, "skin tone") != null) {
-            return LineType.emoji_skin;
-        } else {
-            return LineType.emoji;
-        }
-    } else {
-        return LineType.invalid;
-    }
-}
-
-fn parseEmojiLine(
-    group: []const u8,
-    subgroup: []const u8,
-    line: []const u8,
-    allocator: Allocator,
-) !Emoji {
-    const commentIndex = std.mem.indexOf(u8, line, "#") orelse @panic("failed to parse");
-    const comment = std.mem.trim(u8, line[commentIndex + 1 ..], " ");
-
-    var commentParts = std.mem.splitSequence(u8, comment, " ");
-
-    const emoji_slice = commentParts.next() orelse @panic("No emoji found in line");
-    const emoji = try allocator.dupe(u8, emoji_slice);
-
-    // skip version
-    _ = commentParts.next();
-
-    var descList = std.ArrayList([]const u8).init(allocator);
-    defer descList.deinit();
-
-    while (commentParts.next()) |part| {
-        descList.append(part) catch @panic("Failed to append to descList");
-    }
-
-    const desc = std.mem.join(allocator, " ", descList.items) catch @panic("Failed to join desc");
-
-    const keywords = [_][]const u8{ "test", "test 2" };
-
-    return Emoji{
-        .group = group,
-        .subgroup = subgroup,
-        .emoji = emoji,
-        .desc = desc,
-        .keywords = &keywords,
-        .skin_tones = [5]ArrayList([]const u8){
-            ArrayList([]const u8).init(allocator),
-            ArrayList([]const u8).init(allocator),
-            ArrayList([]const u8).init(allocator),
-            ArrayList([]const u8).init(allocator),
-            ArrayList([]const u8).init(allocator),
-        },
-    };
-}
-
-// index:
-// 0 - light
-// 1 - mid-light
-// 2 - mid
-// 3 - mid-dark
-// 4 - dark
-fn getSkinToneIndex(emoji: *Emoji, line: []const u8, allocator: Allocator) !void {
-    const commentIndex = std.mem.indexOf(u8, line, "#") orelse @panic("failed to parse");
-    const comment = std.mem.trim(u8, line[commentIndex + 1 ..], " ");
-
-    var commentParts = std.mem.splitSequence(u8, comment, " ");
-
-    const emoji_slice = commentParts.next() orelse @panic("No emoji found in line");
-
-    const emoji_str = try allocator.dupe(u8, emoji_slice);
-
-    if (std.mem.indexOf(u8, line, "1F3FB") != null) {
-        try emoji.skin_tones[0].append(emoji_str);
-    }
-    if (std.mem.indexOf(u8, line, "1F3FC") != null) {
-        try emoji.skin_tones[1].append(emoji_str);
-    }
-    if (std.mem.indexOf(u8, line, "1F3FD") != null) {
-        try emoji.skin_tones[2].append(emoji_str);
-    }
-    if (std.mem.indexOf(u8, line, "1F3FE") != null) {
-        try emoji.skin_tones[3].append(emoji_str);
-    }
-    if (std.mem.indexOf(u8, line, "1F3FF") != null) {
-        try emoji.skin_tones[4].append(emoji_str);
-    }
-}
-
-fn parseGroupLine(line: []const u8) []const u8 {
-    var it = std.mem.splitSequence(u8, line, ": ");
-    _ = it.next();
-
-    const result = it.next() orelse @panic("Failed to parse group line");
-
-    return result;
-}
 
 test "EmojiParser handles lines" {
     const test_cases = [_][]const u8{
@@ -178,7 +74,7 @@ test "EmojiParser handles lines" {
     defer parser.deinit();
 
     for (test_cases) |line| {
-        try parser.handleLine(line);
+        try parser.handleEmojiLine(line);
     }
 
     try testing.expectEqual(2, parser.map.count());
@@ -190,6 +86,7 @@ test "EmojiParser handles lines" {
     try testing.expectEqualStrings("face-smiling", grinning.subgroup);
     try testing.expectEqualStrings("😀", grinning.emoji);
     try testing.expectEqualStrings("grinning face", grinning.desc);
+    std.debug.print("lenght!{d}\n", .{grinning.keywords.len}); 
     try testing.expectEqual(0, grinning.keywords.len);
 
     const big_eye = parser.map.get("😶‍🌫️") orelse {
@@ -216,7 +113,7 @@ test "EmojiParser handles skin tones" {
     defer parser.deinit();
 
     for (test_cases) |line| {
-        try parser.handleLine(line);
+        try parser.handleEmojiLine(line);
     }
 
     try testing.expectEqual(1, parser.map.count());
@@ -238,47 +135,3 @@ test "EmojiParser handles skin tones" {
     try testing.expectEqualStrings("🧘🏼", medium_light_skin.items[0]);
 }
 
-test "getLineType returns type" {
-    const test_cases = [_]struct { expectedType: LineType, line: []const u8 }{
-        .{ .expectedType = LineType.group, .line = "# group: Smileys & Emotion" },
-        .{ .expectedType = LineType.subgroup, .line = "# subgroup: face-smiling" },
-        .{ .expectedType = LineType.emoji, .line = "1F600                                                  ; fully-qualified     # 😀 E1.0 grinning face" },
-        .{ .expectedType = LineType.emoji_skin, .line = "1F9D8 1F3FF                                            ; fully-qualified     # 🧘🏿 E5.0 person in lotus position: dark skin tone" },
-        .{ .expectedType = LineType.invalid, .line = "1F636 200D 1F32B                                       ; minimally-qualified # 😶‍🌫 E13.1 face in clouds" },
-    };
-
-    for (test_cases) |test_case| {
-        const result = getLineType(test_case.line);
-
-        try testing.expectEqual(test_case.expectedType, result);
-    }
-}
-
-test "parseEmojiLine returns parsed Emoji" {
-    const emojiLine = "1F600                                                  ; fully-qualified     # 😀 E1.0 grinning face";
-
-    const group = "Smileys & Emotion";
-    const subgroup = "face-smiling";
-
-    const res = try parseEmojiLine(group, subgroup, emojiLine, testing.allocator);
-    defer testing.allocator.free(res.emoji);
-    defer testing.allocator.free(res.desc);
-
-    try testing.expectEqualStrings(group, res.group);
-    try testing.expectEqualStrings(subgroup, res.subgroup);
-    try testing.expectEqualStrings("😀", res.emoji);
-    try testing.expectEqualStrings("grinning face", res.desc);
-}
-
-test "parseGroupLine returns group name" {
-    const groupLine = "# group: Smileys & Emotion";
-    const expectedGroup = "Smileys & Emotion";
-    const resultGroup = parseGroupLine(groupLine);
-    try testing.expectEqualStrings(expectedGroup, resultGroup);
-
-    const subgroupLine = "# subgroup: face-smiling";
-    const expectedSubgroup = "face-smiling";
-    const resultSub = parseGroupLine(subgroupLine);
-
-    try testing.expectEqualStrings(expectedSubgroup, resultSub);
-}
