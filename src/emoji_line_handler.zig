@@ -49,14 +49,14 @@ pub fn parseEmojiLine(
 
     const desc = std.mem.join(allocator, " ", descList.items) catch @panic("Failed to join desc");
 
-    const keywords: []const []const u8 = undefined;
+    const keywords = [_][]const u8{};
 
     return Emoji{
         .group = group,
         .subgroup = subgroup,
         .emoji = emoji,
         .desc = desc,
-        .keywords = keywords,
+        .keywords = &keywords,
         .skin_tones = [5]ArrayList([]const u8){
             ArrayList([]const u8).init(allocator),
             ArrayList([]const u8).init(allocator),

@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 const Emoji = @import("emoji.zig").Emoji;
 const emoji_line_handler = @import("emoji_line_handler.zig");
+const keywords_processor = @import("keywords_processor.zig");
 
 pub const EmojiParser = struct {
     group: []const u8,
@@ -55,6 +56,16 @@ pub const EmojiParser = struct {
         }
     }
 
+    pub fn handleKeywordsLine(self: *EmojiParser, line: []const u8) !void {
+        const emoji_keywords_pair = try keywords_processor.EmojiKeywordsPair.initFromLine(line, self.arena.allocator());
+
+        var emoji = self.map.get(emoji_keywords_pair.emoji) orelse @panic("emoji doesn't exist");
+
+        emoji.keywords = emoji_keywords_pair.keywords;
+
+        try self.map.put(emoji.emoji, emoji);
+    }
+
     pub fn deinit(self: *EmojiParser) void {
         self.map.deinit();
         self.arena.deinit();
@@ -86,7 +97,6 @@ test "EmojiParser handles lines" {
     try testing.expectEqualStrings("face-smiling", grinning.subgroup);
     try testing.expectEqualStrings("😀", grinning.emoji);
     try testing.expectEqualStrings("grinning face", grinning.desc);
-    std.debug.print("lenght!{d}\n", .{grinning.keywords.len}); 
     try testing.expectEqual(0, grinning.keywords.len);
 
     const big_eye = parser.map.get("😶‍🌫️") orelse {
@@ -98,6 +108,36 @@ test "EmojiParser handles lines" {
     try testing.expectEqualStrings("😶‍🌫️", big_eye.emoji);
     try testing.expectEqualStrings("face in clouds", big_eye.desc);
     try testing.expectEqual(0, big_eye.keywords.len);
+}
+
+test "EmojiParser handles keywords lines" {
+    const test_emoji_lines = [_][]const u8{
+        "# group: Smileys & Emotion",
+        "# subgroup: face-smiling",
+        "1F600                                                  ; fully-qualified     # 😀 E1.0 grinning face",
+    };
+
+    const test_keywords_line = "😀\tgrinning face\tgrinning,smile,happy,joy";
+
+    var parser = EmojiParser.init(testing.allocator);
+    defer parser.deinit();
+
+    for (test_emoji_lines) |line| {
+        try parser.handleEmojiLine(line);
+    }
+
+    try parser.handleKeywordsLine(test_keywords_line);
+
+    const grinning = parser.map.get("😀") orelse {
+        try testing.expect(false); // Fail if emoji not found
+        return;
+    };
+    try testing.expectEqualStrings("Smileys & Emotion", grinning.group);
+    try testing.expectEqualStrings("face-smiling", grinning.subgroup);
+    try testing.expectEqualStrings("😀", grinning.emoji);
+    try testing.expectEqualStrings("grinning face", grinning.desc);
+    try testing.expectEqual(4, grinning.keywords.len);
+
 }
 
 test "EmojiParser handles skin tones" {

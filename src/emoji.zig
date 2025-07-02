@@ -8,7 +8,7 @@ pub const Emoji = struct {
     group: []const u8,
     subgroup: []const u8,
     desc: []const u8,
-    keywords: []const []const u8,
+    keywords: [][]const u8,
     skin_tones: [5]ArrayList([]const u8),
 
     pub fn format(value: Emoji, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
@@ -49,7 +49,7 @@ test "Emoji format function" {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const keywords = [_][]const u8{ "happy", "smile" };
+    var keywords = [_][]const u8{ "happy", "smile" };
 
     const emoji = Emoji{
         .emoji = "😀",
