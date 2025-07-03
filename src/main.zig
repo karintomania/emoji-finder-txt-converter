@@ -23,7 +23,7 @@ pub fn main() !void {
     var iterator = emojiParser.map.iterator();
     while (iterator.next()) |entry| {
         const emoji = entry.value_ptr.*;
-        try writer.print("Emoji: {any}\n", .{emoji});
+        try writer.print("{any}\n", .{emoji});
     }
 }
 
